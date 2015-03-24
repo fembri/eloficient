@@ -49,4 +49,8 @@ class EloficientServiceProvider extends ServiceProvider {
 		$this->commands('eloficient.scanfield');
 	}
 
+	public function provides()
+	{
+		return array("eloficient");
+	}
 }
