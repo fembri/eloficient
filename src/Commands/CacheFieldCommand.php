@@ -1,8 +1,6 @@
-<?php namespace Creolab\LaravelModules\Commands;
+<?php namespace Fembri\Eloficient\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Foundation\Composer;
-use Illuminate\Foundation\Application;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputArgument;
 
@@ -10,7 +8,7 @@ use Symfony\Component\Console\Input\InputArgument;
 * Scan available modules
 * @author Boris Strahija <bstrahija@gmail.com>
 */
-class CacheFieldCommand extends AbstractCommand {
+class CacheFieldCommand extends Command {
 
 	/**
 	 * Name of the command
