@@ -66,7 +66,7 @@ class FieldCache
 			$obj = new $model;
 			file_put_contents(
 				$this->formatFieldFileName($this->modelFieldPath, $model),
-				json_encode( $obj->getConnection()->select("SHOW COLUMNS FROM ".$obj->getTable()) )
+				json_encode( $obj->getConnection()->select("SHOW COLUMNS FROM '".$obj->getTable()."'") )
 			);
 		}
 		

@@ -4,10 +4,6 @@ use Illuminate\Console\Command;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Input\InputArgument;
 
-/**
-* Scan available modules
-* @author Boris Strahija <bstrahija@gmail.com>
-*/
 class CacheFieldCommand extends Command {
 
 	/**
