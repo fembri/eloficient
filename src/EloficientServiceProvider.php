@@ -51,6 +51,6 @@ class EloficientServiceProvider extends ServiceProvider {
 
 	public function provides()
 	{
-		return array("eloficient");
+		return array("eloficient", "eloficient.scanfield");
 	}
 }
