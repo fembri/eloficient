@@ -1,7 +1,7 @@
 <?php namespace Fembri\Eloficient;
 
 use Illuminate\Support\ServiceProvider;
-use Fembri\Eloficient\Commands\ScanFieldCommand;
+use Fembri\Eloficient\Commands\CacheFieldCommand;
 
 class EloficientServiceProvider extends ServiceProvider {
 
@@ -41,16 +41,16 @@ class EloficientServiceProvider extends ServiceProvider {
 	
 	public function registerCommands()
 	{
-		$this->app->bindShared('eloficient.scanfield', function($app)
+		$this->app->bindShared('eloficient.cachefield', function($app)
 		{
-			return new ScanFieldCommand($app);
+			return new CacheFieldCommand($app);
 		});
 		
-		$this->commands('eloficient.scanfield');
+		$this->commands('eloficient.cachefield');
 	}
 
 	public function provides()
 	{
-		return array("eloficient", "eloficient.scanfield");
+		return array("eloficient", "eloficient.cachefield");
 	}
 }

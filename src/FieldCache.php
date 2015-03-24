@@ -1,5 +1,7 @@
 <?php namespace Fembri\Eloficient;
 
+use ReflectionClass;
+
 class FieldCache 
 {
 	protected $fields = array();
@@ -8,10 +10,12 @@ class FieldCache
 	
 	protected $modelPaths = array();
 	
-	public function __construct(String $modelPaths, String $modelFieldPath)
+	public function __construct($modelPaths, $modelFieldPath)
 	{
 		$this->modelFieldPath = $modelFieldPath;
 		$this->modelPaths = $modelPaths;
+		
+		if (!file_exists($this->modelFieldPath)) mkdir($this->modelFieldPath);
 	}
 	
 	public function set($models, $fields)
@@ -24,7 +28,7 @@ class FieldCache
 	public function get($model)
 	{
 		if (!$this->has($model)) {
-			$this->set($model, $this->loadFieldFromFile($model);
+			$this->set($model, $this->loadFieldFromFile($model));
 		}
 		return $this->fields[$model];
 	}
@@ -57,14 +61,16 @@ class FieldCache
 		}
 		
 		foreach($models as $model) {
-			$model = new $obj;
-			if ($obj instanceOf Model === false) continue;
-			
-			@file_put_contents(
-				$this->formatFieldFileName($this->modelFieldPath, $model), 
+			$obj = new ReflectionClass($model);
+			if ($obj->isSubClassOf('\Fembri\Eloficient\Model') === false) continue;
+			$obj = new $model;
+			file_put_contents(
+				$this->formatFieldFileName($this->modelFieldPath, $model),
 				json_encode( $obj->getConnection()->select("SHOW COLUMNS FROM ".$obj->getTable()) )
 			);
 		}
+		
+		return $models;
 	}
 	
 	private function getEloficientModels($file)
@@ -85,7 +91,7 @@ class FieldCache
 				}
 			} elseif ($tokens[$i][0] === T_CLASS && is_array($tokens[$i + 2]) && $tokens[$i + 2][0] === T_STRING) {
 				$i += 2;
-				$models[] = $namespace."\\".$tokens[$i][1];
+				$models[] = $namespace ? $namespace."\\".$tokens[$i][1] : $tokens[$i][1];
 			}
 		}
 		return $models;
@@ -94,8 +100,9 @@ class FieldCache
 	public function loadFieldFromFile($model)
 	{
 		$fields = json_decode(@file_get_contents($this->formatFieldFileName($this->modelFieldPath, $model)));
+		
 		if (is_array($fields)) foreach($fields as $i => $field) {
-			$fields[] = $field["Field"];
+			$fields[$i] = $field->Field;
 		}
 		if (!$fields) $fields = array();
 		return $fields;
@@ -103,7 +110,7 @@ class FieldCache
 	
 	public function formatFieldFileName($path, $className)
 	{
-		return str_replace("\\", "", $className);
+		return $path."/".str_replace("\\", "", $className).".json";
 	}
 	
 	public function getModelFieldPath()

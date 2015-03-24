@@ -36,10 +36,10 @@ class CacheFieldCommand extends AbstractCommand {
 	 */
 	public function fire()
 	{
-		$this->info('Caching models fields');
+		$this->info('Caching models fields.');
 		
-		$this->app["eloficient"]->cacheFields();
+		$models = App("eloficient")->cacheFields();
 		
-		$this->info('Finished!');
+		$this->info('Finished! Found '.count($models)." models.");
 	}
 }

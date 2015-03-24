@@ -42,7 +42,7 @@ abstract class Model extends Eloquent {
 	public function getFields()
 	{
 		if (!$this->fields) {
-			$this->fields = $this->getFieldCache()->get(__CLASS__);
+			$this->fields = $this->getFieldCache()->get(get_called_class());
 		}
 		return $this->fields;
 	}
@@ -52,7 +52,7 @@ abstract class Model extends Eloquent {
 		return static::$fieldCache;
 	}
 	
-	public function setFieldCache($fieldCache)
+	public static function setFieldCache($fieldCache)
 	{
 		return static::$fieldCache = $fieldCache;
 	}
