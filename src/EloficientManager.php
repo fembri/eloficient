@@ -18,7 +18,7 @@ class EloficientManager {
 	
 	public function cacheFields()
 	{
-		$this->fieldCache->cache();
+		return $this->fieldCache->cache();
 	}
 	
 	public function getFieldScanner()
