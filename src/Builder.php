@@ -11,6 +11,50 @@ class Builder extends EloquentBuilder {
 	const RELATION_PREFIX = "rel";
 	const FIELD_SEPARATOR = "#";
 	const GROUP_SEPARATOR = ",";
+	const SUPPORTED_JOIN_CONDITION = array(
+		"Basic"
+	);
+	protected $disableEloficient = false;
+	protected $relations;
+	protected $relationLibrary;
+	protected $queryComponents = array(
+		'wheres',
+		'havings',
+		'orders',
+	);
+	protected $search;
+	protected $prepareForPagination;
+	
+	public function unEloficient()
+	{
+		$this->disableEloficient = true;
+	}
+	
+	public function search($value)
+	{
+		$this->search = $value;
+	}
+	
+	public function paginate($perPage, $columns = array("*"));
+	{
+		if ($this->disableEloficient) return parent::paginate($perPage, $columns = array("*"));
+		
+		$perPage = $perPage ?: ($_GET["perpage"] ?: $this->model->getPerPage());
+
+		$paginator = $this->query->getConnection()->getPaginator();
+		
+		$this->prepareForPagination = true;
+		
+		$this->query->forPage($paginator->getCurrentPage(), $perPage);
+
+		return $paginator->make($this->get($columns)->all(), $this->getPaginationTotalRows(), $perPage);
+	}
+	
+	public function getPaginationTotalRows()
+	{
+		$total = $this->model->getConnection()->selectOne("SELECT FOUND_ROWS() AS total");
+		return $total["total"] ?: 0;
+	}
 	
 	/**
 	 * Create a new Eloficient builder instance.
@@ -19,51 +63,80 @@ class Builder extends EloquentBuilder {
 	 * @return void
 	 */
 
-	public function load($columns = array("*"))
+	public function get($columns = array("*"))
 	{
-		if (!$this->eagerLoad) return $this->get($columns);
+		if ($this->disableEloficient) return parent::get($columns);
 		
-		$relations = $this->buildRelationshipTree();
-		
-		$this->applyRelationshipQuery($relations);
-		
-		$results = $this->query->get($this->getColumns($relations));
-		
-		$models = $this->buildModelsFromRelationshipTree($relations, $results);
+		if ($this->eagerLoad) {
+			
+			$this->prepareQuery();
+			
+			$this->buildRelationshipTree();
+			
+			$this->applyRelationshipQuery($this->relations);
+			
+			$this->reformatQueryComponents();
+			
+			$this->query->columns = array_merge(
+				$this->query->columns,
+				$this->getColumns($this->relations)
+			);
+			
+			$this->applySearch();
+			
+			$models = $this->buildModelsFromRelationshipTree(
+				$this->relations, 
+				$this->query->get()
+			);
+		} else 
+			$models = $this->getModels($columns);
 		
 		return $this->model->newCollection($models);
 	}
 	
+	public function prepareQuery()
+	{
+		$this->query->columns = array();
+		$this->query->groups = array();
+		$this->query->joins = array();
+		
+		if ($this->prepareForPagination)
+			$this->query->columns[] = $this->query->raw("SQL_CALC_FOUND_ROWS");
+	}
+	
 	public function buildRelationshipTree()
 	{
-		$results = array();
-		$library = array();
+		$this->relations = array();
+		$this->relationLibrary = array();
 		$prefix = static::RELATION_PREFIX;
 		$childs = array();
 		
 		foreach($this->eagerLoad as $fullName => $constraint) {
-			$id = count($library) + 1;
+			$id = count($this->relationLibrary) + 1;
 				
 			if (strpos($fullName, ".") === false) {
 				$name = $fullName;
 				$relation = $this->model->{$name}();
 				$model = $relation->getQuery()->getModel();
 				
-				$results[] = compact("id","name","prefix","relation","model","childs");
-				$library[$fullName] = &$results[count($results)-1];
+				call_user_func($constraint, $relation);
+				
+				$this->relations[] = compact("id","name","prefix","relation","model","childs");
+				$this->relationLibrary[$fullName] = &$this->relations[ count($this->relations) - 1 ];
 			} else {
 				$parentName = explode(".", $fullName);
 				$name = array_pop($parentName);
-				$parent = &$library[implode(".", $parentName)];
+				$parent = &$this->relationLibrary[implode(".", $parentName)];
 				
 				$relation = $parent["model"]->{$name}();
 				$model = $relation->getQuery()->getModel();
 				
+				call_user_func($constraint, $relation);
+				
 				$parent["childs"][] = compact("id","name","prefix","relation","model","childs");
-				$library[$fullName] = &$parent["childs"][count($parent["childs"])-1];
+				$this->relationLibrary[$fullName] = &$parent["childs"][count($parent["childs"])-1];
 			}
 		}
-		return $results;
 	}
 	
 	public function applyRelationshipQuery($relations, $parent = null)
@@ -74,22 +147,68 @@ class Builder extends EloquentBuilder {
 		}
 		
 		foreach($relations as $i => $relation) {
-			if ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\HasOneOrMany) {
-				$firstKey = explode(".", $relation["relation"]->getQualifiedParentKeyName());
-				$firstKey = array_pop($firstKey);
-				$secondKey = $relation["relation"]->getPlainForeignKey();
-			} elseif ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
-				$firstKey = $relation["relation"]->getForeignKey();
-				$secondKey = $relation["relation"]->getOtherKey();
-			}
 			
+			$joinCondition = function($join) use ($parent, $relation)  {
+				
+				if ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\HasOneOrMany) {
+					$firstKey = explode( ".", $relation["relation"]->getQualifiedParentKeyName() );
+					$firstKey = array_pop( $firstKey );
+					$secondKey = $relation["relation"]->getPlainForeignKey();
+				} elseif ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
+					$firstKey = $relation["relation"]->getForeignKey();
+					$secondKey = $relation["relation"]->getOtherKey();
+				}
+				
+				$join->on(
+					$parent["prefix"] . $parent["id"] . "." . $firstKey, 
+					"=", 
+					$relation["prefix"] . $relation["id"] . "." . $secondKey
+				);
+				
+				foreach($relation["relation"]->getQuery()->getQuery()->wheres as $where) {
+					
+					if (!in_array($where["type"], static::SUPPORTED_JOIN_CONDITION)) continue;
+					
+					$join->on(
+						$this->getRelationalColumnName($where["column"]),
+						$where["operator"],
+						is_string($where["value"]) ? $this->getRelationalColumnName($where["column"]) : $where["value"],
+						$where["boolean"],
+						!is_string($where["value"])
+					);
+				}
+			}
+		
 			$this->query->leftJoin(
 				$relation["relation"]->getRelated()->getTable()." as ".$relation["prefix"].$relation["id"],
-				$parent["prefix"].$parent["id"].".".$firstKey, "=", $relation["prefix"].$relation["id"].".".$secondKey
+				$joinCondition
 			);
 			
 			$this->applyRelationshipQuery($relation["childs"], $relation);
 		}
+	}
+	
+	public function getRelationalColumnName($column)
+	{
+		if (strpos(".", $column) === false) {
+			if (in_array($column, $this->model->getFields()))
+				return $this->model->getTable() . "." . $column;
+			else 
+				return $column;
+		}
+		
+		$parentName = explode(".", $column);
+		
+		if (strtolower($parentName[0]) == strtolower($this->model->getTable()) && count($parentName) == 2)
+			return $column;
+		
+		$column = array_pop($parentName);
+		$parentName = implode(".", $parentName);
+		
+		if ($relation = $this->relationLibrary[$parentName])
+			return $relation["prefix"] . $relation["id"] . "." .$column;
+		
+		return $parentName . "." . $column;
 	}
 	
 	public function getColumns($relations, $parent = array())
@@ -120,6 +239,42 @@ class Builder extends EloquentBuilder {
 			);
 		}
 		return $columns;
+	}
+	
+	public function applySearch()
+	{
+		if ($this->search) {
+			foreach($this->models->getFields() as $field)
+				$this->query->orWhere($this->models->getTable() . $field, "like", "%".$this->search."%");
+				
+			foreach($this->relationLibrary as $relation) {
+				$this->query->orHaving($relation["prefix"].$relation["id"] . "_fields", "like", "%".$this->search."%");
+			}
+		}
+	}
+	
+	public function reformatQueryComponents()
+	{
+		foreach($this->queryComponents as $component) {
+			if ($component == 'columns') $this->reformatColumns();
+			else
+				foreach($this->query->{$component} as $i => $item) {
+					if ($this->query->{$component}[$i]["column"]) {
+						$this->query->{$component}[$i]["column"] = $this->getRelationalColumnName(
+							$this->query->{$component}[$i]["column"]
+						);
+					}
+				}
+		}
+	}
+	
+	public function reformatColumns($columns)
+	{
+		foreach($this->query->columns as $i => $column){
+			if ($column instanceof Query\Expression) continue;
+			
+			$this->query->columns[$i] = $this->getRelationalColumnName($this->query->columns[$i]);
+		}
 	}
 	
 	public function buildModelsFromRelationshipTree($relations, $results)
