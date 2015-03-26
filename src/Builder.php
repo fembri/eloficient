@@ -11,7 +11,8 @@ class Builder extends EloquentBuilder {
 	const RELATION_PREFIX = "rel";
 	const FIELD_SEPARATOR = "#";
 	const GROUP_SEPARATOR = ",";
-	const SUPPORTED_JOIN_CONDITION = array(
+	
+	protected $supportedJoinCondition = array(
 		"Basic"
 	);
 	protected $disableEloficient = false;
@@ -167,7 +168,7 @@ class Builder extends EloquentBuilder {
 				
 				foreach($relation["relation"]->getQuery()->getQuery()->wheres as $where) {
 					
-					if (!in_array($where["type"], static::SUPPORTED_JOIN_CONDITION)) continue;
+					if (!in_array($where["type"], $this->supportedJoinCondition)) continue;
 					
 					$join->on(
 						$this->getRelationalColumnName($where["column"]),
