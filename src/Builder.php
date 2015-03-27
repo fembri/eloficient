@@ -9,8 +9,8 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 class Builder extends EloquentBuilder {
 	
 	const RELATION_PREFIX = "rel";
-	const FIELD_SEPARATOR = "#";
-	const GROUP_SEPARATOR = ",";
+	const FIELD_SEPARATOR = "#F#";
+	const GROUP_SEPARATOR = "|G|";
 	
 	protected $supportedJoinCondition = array(
 		"Basic"
@@ -36,7 +36,7 @@ class Builder extends EloquentBuilder {
 		$this->search = $value;
 	}
 	
-	public function paginate($perPage, $columns = array("*"));
+	public function paginate($perPage, $columns = array("*"))
 	{
 		if ($this->disableEloficient) return parent::paginate($perPage, $columns = array("*"));
 		
@@ -87,10 +87,12 @@ class Builder extends EloquentBuilder {
 			
 			$models = $this->buildModelsFromRelationshipTree(
 				$this->relations, 
-				$this->query->get()
+				$results = $this->query->get()
 			);
 		} else 
 			$models = $this->getModels($columns);
+		
+		
 		
 		return $this->model->newCollection($models);
 	}
@@ -178,7 +180,7 @@ class Builder extends EloquentBuilder {
 						!is_string($where["value"])
 					);
 				}
-			}
+			};
 		
 			$this->query->leftJoin(
 				$relation["relation"]->getRelated()->getTable()." as ".$relation["prefix"].$relation["id"],
@@ -191,7 +193,7 @@ class Builder extends EloquentBuilder {
 	
 	public function getRelationalColumnName($column)
 	{
-		if (strpos(".", $column) === false) {
+		if (strpos($column, ".") === false) {
 			if (in_array($column, $this->model->getFields()))
 				return $this->model->getTable() . "." . $column;
 			else 
@@ -206,7 +208,7 @@ class Builder extends EloquentBuilder {
 		$column = array_pop($parentName);
 		$parentName = implode(".", $parentName);
 		
-		if ($relation = $this->relationLibrary[$parentName])
+		if ($relation = $this->relationLibrary[$parentName]) 
 			return $relation["prefix"] . $relation["id"] . "." .$column;
 		
 		return $parentName . "." . $column;
@@ -223,7 +225,7 @@ class Builder extends EloquentBuilder {
 		foreach($relations as $i => $relation) {
 			$column = $parent;
 			foreach($relation["model"]->getFields() as $field)
-				$column[] = $relation["prefix"].$relation["id"]. "." .$field;
+				$column[] = "IFNULL(".$relation["prefix"].$relation["id"]. "." .$field.",'')";
 			$columns[] = $this->query->raw(
 					"GROUP_CONCAT(DISTINCT 
 						CONCAT(".implode(",'".static::FIELD_SEPARATOR."',", $column).") 
@@ -258,7 +260,7 @@ class Builder extends EloquentBuilder {
 	{
 		foreach($this->queryComponents as $component) {
 			if ($component == 'columns') $this->reformatColumns();
-			else
+			elseif ($this->query->{$component}) {
 				foreach($this->query->{$component} as $i => $item) {
 					if ($this->query->{$component}[$i]["column"]) {
 						$this->query->{$component}[$i]["column"] = $this->getRelationalColumnName(
@@ -266,6 +268,7 @@ class Builder extends EloquentBuilder {
 						);
 					}
 				}
+			}
 		}
 	}
 	
@@ -282,11 +285,11 @@ class Builder extends EloquentBuilder {
 	{
 		$models = array();
 		foreach($results as $result) {
-			$key = $result[$this->model->getKeyName()];
+			$key = $result->{$this->model->getKeyName()};
 			if (!isset($models[$key])) {
 				$attributes = array();
 				foreach($this->model->getFields() as $field) 
-					$attributes[$field] = $result[$field];
+					$attributes[$field] = $result->{$field};
 				$models[$key] = $this->model->newFromBuilder($attributes);
 				$models[$key]->setConnection($this->model->getConnectionName());
 			}
@@ -300,7 +303,7 @@ class Builder extends EloquentBuilder {
 	{
 		foreach($relations as $relation) {
 			$fieldSets = array_filter(
-				explode(static::GROUP_SEPARATOR, $result[ $relation["prefix"].$relation["id"]. "_fields" ]), 
+				explode(static::GROUP_SEPARATOR, $result->{ $relation["prefix"].$relation["id"]. "_fields" }), 
 				function($value) use ($parentKey) {
 					return !$parentKey || strpos($value, $parentKey) === 0;
 				}
@@ -309,7 +312,7 @@ class Builder extends EloquentBuilder {
 			$models = array();
 			foreach(array_values($fieldSets) as $i => $fieldSet) {
 				$models[$i] = $this->createModelInstanceFromResult($relation, $fieldSet, $parentKey);
-				$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey."#".$models[$i]->getKey() : $models[$i]->getKey());
+				$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $models[$i]->getKey() : $models[$i]->getKey());
 			}
 			
 			switch(get_class($relation["relation"])) {
@@ -323,13 +326,15 @@ class Builder extends EloquentBuilder {
 					break;
 			}
 			
+			
 			$parent->setRelation($relation["name"], $collection);
+			
 		}
 	}
 		
 	public function createModelInstanceFromResult($relation, $fieldSet, $parentKey)
 	{
-		$fieldSet = explode(static::FIELD_SEPARATOR, $parentKey ? substr($fieldSet, strlen($parentKey) + 1) : $fieldSet);
+		$fieldSet = explode(static::FIELD_SEPARATOR, $parentKey ? substr($fieldSet, strlen($parentKey) + strlen(static::FIELD_SEPARATOR)) : $fieldSet);
 		
 		$attributes = array();
 		foreach($relation["model"]->getFields() as $i => $field) 
