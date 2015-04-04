@@ -29,11 +29,13 @@ class Builder extends EloquentBuilder {
 	public function unEloficient()
 	{
 		$this->disableEloficient = true;
+		return $this;
 	}
 	
 	public function search($value)
 	{
 		$this->search = $value;
+		return $this;
 	}
 	
 	public function paginate($perPage, $columns = array("*"))
@@ -47,14 +49,14 @@ class Builder extends EloquentBuilder {
 		$this->prepareForPagination = true;
 		
 		$this->query->forPage($paginator->getCurrentPage(), $perPage);
-
+		
 		return $paginator->make($this->get($columns)->all(), $this->getPaginationTotalRows(), $perPage);
 	}
 	
 	public function getPaginationTotalRows()
 	{
 		$total = $this->model->getConnection()->selectOne("SELECT FOUND_ROWS() AS total");
-		return $total["total"] ?: 0;
+		return $total->total ?: 0;
 	}
 	
 	/**
@@ -89,6 +91,7 @@ class Builder extends EloquentBuilder {
 				$this->relations, 
 				$results = $this->query->get()
 			);
+			
 		} else 
 			$models = $this->getModels($columns);
 		
@@ -102,9 +105,10 @@ class Builder extends EloquentBuilder {
 		$this->query->columns = array();
 		$this->query->groups = array();
 		$this->query->joins = array();
-		
+		/*
 		if ($this->prepareForPagination)
 			$this->query->columns[] = $this->query->raw("SQL_CALC_FOUND_ROWS");
+		*/
 	}
 	
 	public function buildRelationshipTree()
@@ -218,8 +222,12 @@ class Builder extends EloquentBuilder {
 	{
 		$columns = array();
 		if (!$parent) {
-			foreach($this->model->getFields() as $field) 
-				$columns[] = $this->model->getTable().".".$field;
+			foreach($this->model->getFields() as $i => $field)
+				if ($this->prepareForPagination && $i == 0)
+					$columns[] = $this->query->raw("SQL_CALC_FOUND_ROWS " . $this->model->getTable().".".$field);
+				else 
+					$columns[] = $this->model->getTable().".".$field;
+			
 		}
 		
 		foreach($relations as $i => $relation) {
@@ -247,9 +255,10 @@ class Builder extends EloquentBuilder {
 	public function applySearch()
 	{
 		if ($this->search) {
-			foreach($this->models->getFields() as $field)
-				$this->query->orWhere($this->models->getTable() . $field, "like", "%".$this->search."%");
-				
+			$this->where(function($query) {
+				foreach($this->model->getFields() as $field)
+					$query->orWhere($this->model->getTable() .".". $field, "like", "%".$this->search."%");
+			});
 			foreach($this->relationLibrary as $relation) {
 				$this->query->orHaving($relation["prefix"].$relation["id"] . "_fields", "like", "%".$this->search."%");
 			}
@@ -311,24 +320,26 @@ class Builder extends EloquentBuilder {
 			
 			$models = array();
 			foreach(array_values($fieldSets) as $i => $fieldSet) {
-				$models[$i] = $this->createModelInstanceFromResult($relation, $fieldSet, $parentKey);
-				$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $models[$i]->getKey() : $models[$i]->getKey());
+				if ($model = $this->createModelInstanceFromResult($relation, $fieldSet, $parentKey)) {
+					$models[$i] = $model;
+					$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $models[$i]->getKey() : $models[$i]->getKey());
+				}
 			}
 			
-			switch(get_class($relation["relation"])) {
-				case "Illuminate\Database\Eloquent\Relations\HasOne":
-				case "Illuminate\Database\Eloquent\Relations\BelongsTo":
-					$collection = array_shift($models);
-					break;
-				case "Illuminate\Database\Eloquent\Relations\HasMany":
-				default:
-					$collection = $relation["model"]->newCollection($models);
-					break;
-			}
-			
+			if ($models) {
+				switch(get_class($relation["relation"])) {
+					case "Illuminate\Database\Eloquent\Relations\HasOne":
+					case "Illuminate\Database\Eloquent\Relations\BelongsTo":
+						$collection = array_shift($models);
+						break;
+					case "Illuminate\Database\Eloquent\Relations\HasMany":
+					default:
+						$collection = $relation["model"]->newCollection($models);
+						break;
+				}
+			} else unset($collection);
 			
 			$parent->setRelation($relation["name"], $collection);
-			
 		}
 	}
 		
@@ -336,12 +347,16 @@ class Builder extends EloquentBuilder {
 	{
 		$fieldSet = explode(static::FIELD_SEPARATOR, $parentKey ? substr($fieldSet, strlen($parentKey) + strlen(static::FIELD_SEPARATOR)) : $fieldSet);
 		
-		$attributes = array();
-		foreach($relation["model"]->getFields() as $i => $field) 
-			$attributes[$field] = $fieldSet[$i];
-			
-		$model = $relation["model"]->newFromBuilder($attributes);
-		$model->setConnection($relation["model"]->getConnectionName());
-		return $model;
+		if (array_filter($fieldSet, function($val) { return $val && true;})) {
+			$attributes = array();
+			foreach($relation["model"]->getFields() as $i => $field) 
+				$attributes[$field] = $fieldSet[$i];
+				
+			$model = $relation["model"]->newFromBuilder($attributes);
+			$model->setConnection($relation["model"]->getConnectionName());
+			return $model;
+		}
+		
+		return false;
 	}
 }
