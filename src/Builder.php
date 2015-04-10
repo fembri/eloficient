@@ -4,13 +4,13 @@ use Closure;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 
 class Builder extends EloquentBuilder {
 	
 	const RELATION_PREFIX = "rel";
 	const FIELD_SEPARATOR = "#F#";
 	const GROUP_SEPARATOR = "|G|";
+	const OBSERVER_PREFIX = "obs";
 	
 	protected $supportedJoinCondition = array(
 		"Basic"
@@ -23,6 +23,7 @@ class Builder extends EloquentBuilder {
 		'havings',
 		'orders',
 	);
+	protected $observer = array();
 	protected $search;
 	protected $prepareForPagination;
 	
@@ -38,7 +39,7 @@ class Builder extends EloquentBuilder {
 		return $this;
 	}
 	
-	public function paginate($perPage, $columns = array("*"))
+	public function paginate($perPage = null, $columns = array("*"))
 	{
 		if ($this->disableEloficient) return parent::paginate($perPage, $columns = array("*"));
 		
@@ -81,8 +82,8 @@ class Builder extends EloquentBuilder {
 			$this->reformatQueryComponents();
 			
 			$this->query->columns = array_merge(
-				$this->query->columns,
-				$this->getColumns($this->relations)
+				$this->getColumns($this->relations),
+				$this->getObserverColumns()
 			);
 			
 			$this->applySearch();
@@ -268,13 +269,30 @@ class Builder extends EloquentBuilder {
 	public function reformatQueryComponents()
 	{
 		foreach($this->queryComponents as $component) {
-			if ($component == 'columns') $this->reformatColumns();
-			elseif ($this->query->{$component}) {
-				foreach($this->query->{$component} as $i => $item) {
-					if ($this->query->{$component}[$i]["column"]) {
+			if (!$this->query->{$component}) continue;
+			
+			foreach($this->query->{$component} as $i => $item) {
+				if ($this->query->{$component}[$i]["column"]) {				
+					if (strpos($this->query->{$component}[$i]["column"], "obs::") === 0) {
+						$this->query->{$component}[$i]["column"] = self::OBSERVER_PREFIX . substr(
+							$this->query->{$component}[$i]["column"], strlen("obs::")
+						);
+					}  else {				
 						$this->query->{$component}[$i]["column"] = $this->getRelationalColumnName(
 							$this->query->{$component}[$i]["column"]
 						);
+					}
+				}
+				
+				if ($this->query->{$component}[$i]["value"]) {
+					if ($this->query->{$component}[$i]["value"] instanceof Expression) {
+						$this->query->{$component}[$i]["type"] = "raw";
+						$this->query->{$component}[$i]["sql"] = $this->query->raw(
+							$this->query->{$component}[$i]["column"]. " " .
+							$this->query->{$component}[$i]["operator"]. " ".
+							$this->query->{$component}[$i]["value"]
+						);
+						unset($this->query->{$component}[$i]["value"]);
 					}
 				}
 			}
@@ -293,19 +311,17 @@ class Builder extends EloquentBuilder {
 	public function buildModelsFromRelationshipTree($relations, $results)
 	{
 		$models = array();
-		foreach($results as $result) {
-			$key = $result->{$this->model->getKeyName()};
-			if (!isset($models[$key])) {
-				$attributes = array();
-				foreach($this->model->getFields() as $field) 
-					$attributes[$field] = $result->{$field};
-				$models[$key] = $this->model->newFromBuilder($attributes);
-				$models[$key]->setConnection($this->model->getConnectionName());
-			}
-			$this->buildModel($models[$key], $relations, $result);
+		foreach($results as $i => $result) {
+			$attributes = array();
+			foreach($this->model->getFields() as $field) 
+				$attributes[$field] = $result->{$field};
+			$models[$i] = $this->model->newFromBuilder($attributes);
+			$models[$i]->setConnection($this->model->getConnectionName());
+			
+			$this->buildModel($models[$i], $relations, $result);
 		}
 		
-		return array_values($models);
+		return $models;
 	}
 	
 	public function buildModel(&$parent, $relations, $result, $parentKey = "")
@@ -358,5 +374,28 @@ class Builder extends EloquentBuilder {
 		}
 		
 		return false;
+	}
+	
+	public function addObserverField($function, $columns, $alias)
+	{
+		if (!is_array($columns)) $columns = array($columns);
+		if (isset($this->observer[$alias])) throw new Exception("Observer alias already defined.");
+		
+		$this->observer[$alias] = compact("function", "columns");
+		
+		return $this;
+	}
+	
+	public function getObserverColumns()
+	{
+		$columns = array();
+		foreach($this->observer as $alias => $value) {
+			
+			if ($value["function"] == "SUM") {
+				$name = $this->getRelationalColumnName($value["columns"][0]);
+				$columns[] = $this->query->raw($value["function"] . "($name) as ".self::OBSERVER_PREFIX.$alias);
+			}
+		}
+		return $columns;
 	}
 }

@@ -16,12 +16,13 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Query\Builder as QueryBuilder;
+//use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\ConnectionResolverInterface as Resolver;
 use Illuminate\Database\Eloquent\Model as Eloquent;
+use Fembri\Eloficient\QueryBuilder;
 
 abstract class Model extends Eloquent {
 
@@ -75,5 +76,14 @@ abstract class Model extends Eloquent {
 	public function newEloficientBuilder($query)
 	{
 		return new Builder($query);
+	}
+	
+	protected function newBaseQueryBuilder()
+	{
+		$conn = $this->getConnection();
+
+		$grammar = $conn->getQueryGrammar();
+
+		return new QueryBuilder($conn, $grammar, $conn->getPostProcessor());
 	}
 }
