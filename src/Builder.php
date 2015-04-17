@@ -256,10 +256,14 @@ class Builder extends EloquentBuilder {
 	public function applySearch()
 	{
 		if ($this->search) {
+			/*
 			$this->orWhere(function($query) {
 				foreach($this->model->getFields() as $field)
 					$query->orWhere($this->model->getTable() .".". $field, "like", "%".$this->search."%");
 			});
+			*/
+			foreach($this->model->getFields() as $field)
+				$this->query->orHaving($this->model->getTable() .".". $field, "like", "%".$this->search."%");
 			foreach($this->relationLibrary as $relation) {
 				$this->query->orHaving($relation["prefix"].$relation["id"] . "_fields", "like", "%".$this->search."%");
 			}
