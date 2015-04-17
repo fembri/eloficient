@@ -256,7 +256,7 @@ class Builder extends EloquentBuilder {
 	public function applySearch()
 	{
 		if ($this->search) {
-			$this->where(function($query) {
+			$this->orWhere(function($query) {
 				foreach($this->model->getFields() as $field)
 					$query->orWhere($this->model->getTable() .".". $field, "like", "%".$this->search."%");
 			});
