@@ -256,12 +256,12 @@ class Builder extends EloquentBuilder {
 	public function applySearch()
 	{
 		if ($this->search) {
-			/*
+/*
 			$this->orWhere(function($query) {
 				foreach($this->model->getFields() as $field)
 					$query->orWhere($this->model->getTable() .".". $field, "like", "%".$this->search."%");
 			});
-			*/
+*/
 			foreach($this->model->getFields() as $field)
 				$this->query->orHaving($this->model->getTable() .".". $field, "like", "%".$this->search."%");
 			foreach($this->relationLibrary as $relation) {
@@ -270,37 +270,89 @@ class Builder extends EloquentBuilder {
 		}
 	}
 	
-	public function reformatQueryComponents()
+	public function reformatQueryComponents(&$query = null)
 	{
+		if (!$query) $query = $this->query;
 		foreach($this->queryComponents as $component) {
-			if (!$this->query->{$component}) continue;
+			if (!$query->{$component}) continue;
 			
-			foreach($this->query->{$component} as $i => $item) {
-				if ($this->query->{$component}[$i]["column"]) {				
-					if (strpos($this->query->{$component}[$i]["column"], "obs::") === 0) {
-						$this->query->{$component}[$i]["column"] = self::OBSERVER_PREFIX . substr(
-							$this->query->{$component}[$i]["column"], strlen("obs::")
-						);
-					}  else {				
-						$this->query->{$component}[$i]["column"] = $this->getRelationalColumnName(
-							$this->query->{$component}[$i]["column"]
-						);
-					}
-				}
-				
-				if ($this->query->{$component}[$i]["value"]) {
-					if ($this->query->{$component}[$i]["value"] instanceof Expression) {
-						$this->query->{$component}[$i]["type"] = "raw";
-						$this->query->{$component}[$i]["sql"] = $this->query->raw(
-							$this->query->{$component}[$i]["column"]. " " .
-							$this->query->{$component}[$i]["operator"]. " ".
-							$this->query->{$component}[$i]["value"]
-						);
-						unset($this->query->{$component}[$i]["value"]);
-					}
-				}
+			foreach($query->{$component} as $i => $item) {
+				call_user_func_array(array($this, "reformat". $item["type"] ."Query"), array(&$query->{$component}[$i], $component));
 			}
 		}
+	}
+	
+	public function reformatBasicQuery(&$data, $component = null)
+	{
+		if ($data["column"]) {
+			if (strpos($data["column"], "obs::") === 0) {
+				$data["column"] = self::OBSERVER_PREFIX . substr( $data["column"], strlen("obs::") );
+			}  else {				
+				$data["column"] = $this->getRelationalColumnName( $data["column"] );
+			}
+		}
+		
+		if ($data["value"]) {
+			if ($data["value"] instanceof Expression) {
+				$data["type"] = "raw";
+				$data["sql"] = $this->query->raw(
+					$data["column"]. " " .
+					$data["operator"]. " ".
+					$data["value"]
+				);
+				unset($data["value"]);
+			}
+		}
+	}
+	
+	public function reformatQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatRawQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatBetweenQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatNestedQuery(&$data, $component = null)
+	{
+		$this->reformatQueryComponents($data["query"]);
+	}
+	
+	public function reformatExistsQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatNotExistsQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatInQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatNotInQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatNullQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
+	}
+	
+	public function reformatNotNullQuery(&$data, $component = null)
+	{
+		$this->reformatBasicQuery($data);
 	}
 	
 	public function reformatColumns($columns)
