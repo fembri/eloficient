@@ -263,9 +263,9 @@ class Builder extends EloquentBuilder {
 			});
 */
 			foreach($this->model->getFields() as $field)
-				$this->query->orHaving($this->model->getTable() .".". $field, "like", "%".$this->search."%");
+				$this->query->orHavingRaw($this->model->getTable() .".". $field. " like ". "'%".$this->search."%' COLLATE latin1_swedish_ci");
 			foreach($this->relationLibrary as $relation) {
-				$this->query->orHaving($relation["prefix"].$relation["id"] . "_fields", "like", "%".$this->search."%");
+				$this->query->orHavingRaw($relation["prefix"].$relation["id"] . "_fields". " like ". "'%".$this->search."%' COLLATE latin1_swedish_ci");
 			}
 		}
 	}
