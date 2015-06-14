@@ -101,6 +101,36 @@ class Builder extends EloquentBuilder {
 		return $this->model->newCollection($models);
 	}
 	
+	public function update(array $values)
+	{
+		if ($this->eagerLoad) {
+			
+			$this->prepareQuery();
+			
+			$this->buildRelationshipTree();
+			
+			$this->applyRelationshipQuery($this->relations);
+			
+			$this->reformatQueryComponents();			
+		}
+		parent::update($values);
+	}
+	
+	public function delete()
+	{
+		if ($this->eagerLoad) {
+			
+			$this->prepareQuery();
+			
+			$this->buildRelationshipTree();
+			
+			$this->applyRelationshipQuery($this->relations);
+			
+			$this->reformatQueryComponents();
+		}
+		parent::delete();
+	}
+	
 	public function prepareQuery()
 	{
 		$this->query->columns = array();
