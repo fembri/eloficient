@@ -86,4 +86,15 @@ abstract class Model extends Eloquent {
 
 		return new QueryBuilder($conn, $grammar, $conn->getPostProcessor());
 	}
+	
+	public function load($relations)
+	{
+		if (is_string($relations)) $relations = func_get_args();
+
+		$query = $this->newQuery()->with($relations);
+
+		$query->load($this);
+		
+		return $this;
+	}
 }
