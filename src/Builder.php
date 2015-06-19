@@ -177,6 +177,8 @@ class Builder extends EloquentBuilder {
 			if (strpos($fullName, ".") === false) {
 				$name = $fullName;
 				$relation = $this->model->{$name}();
+				$relation->getQuery()->getQuery()->wheres = array();
+				
 				$model = $relation->getQuery()->getModel();
 				
 				call_user_func($constraint, $relation);
@@ -189,6 +191,8 @@ class Builder extends EloquentBuilder {
 				$parent = &$this->relationLibrary[implode(".", $parentName)];
 				
 				$relation = $parent["model"]->{$name}();
+				$relation->getQuery()->getQuery()->wheres = array();
+				
 				$model = $relation->getQuery()->getModel();
 				
 				call_user_func($constraint, $relation);
