@@ -312,17 +312,14 @@ class Builder extends EloquentBuilder {
 	public function applySearch()
 	{
 		if ($this->search) {
-/*
-			$this->orWhere(function($query) {
-				foreach($this->model->getFields() as $field)
-					$query->orWhere($this->model->getTable() .".". $field, "like", "%".$this->search."%");
-			});
-*/
 			foreach($this->model->getFields() as $field)
 				$this->query->orHavingRaw($this->model->getTable() .".". $field. " like ". "'%".$this->search."%' COLLATE latin1_swedish_ci");
-			foreach($this->relationLibrary as $relation) {
+				
+			foreach($this->relationLibrary as $relation)
 				$this->query->orHavingRaw($relation["prefix"].$relation["id"] . "_fields". " like ". "'%".$this->search."%' COLLATE latin1_swedish_ci");
-			}
+				
+			foreach(array_keys($this->observer) as $alias)
+				$this->query->orHavingRaw(self::OBSERVER_PREFIX.$alias. " like ". "'%".$this->search."%' COLLATE latin1_swedish_ci");
 		}
 	}
 	
@@ -488,12 +485,12 @@ class Builder extends EloquentBuilder {
 		return false;
 	}
 	
-	public function addObserverField($function, $columns, $alias)
+	public function addObserverField($function, $columns, $alias, $extras = array())
 	{
 		if (!is_array($columns)) $columns = array($columns);
 		if (isset($this->observer[$alias])) throw new Exception("Observer alias already defined.");
 		
-		$this->observer[$alias] = compact("function", "columns");
+		$this->observer[$alias] = compact("function", "columns", "extras");
 		
 		return $this;
 	}
@@ -503,9 +500,23 @@ class Builder extends EloquentBuilder {
 		$columns = array();
 		foreach($this->observer as $alias => $value) {
 			
-			if ($value["function"] == "SUM") {
-				$name = $this->getRelationalColumnName($value["columns"][0]);
-				$columns[] = $this->query->raw($value["function"] . "($name) as ".self::OBSERVER_PREFIX.$alias);
+			switch ($value["function"]) {
+				case "SUM":
+					$name = $this->getRelationalColumnName($value["columns"][0]);
+					$columns[] = $this->query->raw($value["function"] . "($name) as ".self::OBSERVER_PREFIX.$alias);
+					break;
+				case "CONCAT":
+					extract($value["extras"]);
+					$raw = "";
+					if (!isset($separator)) $separator = "";
+					$length = count($value["columns"]);
+					foreach($value["columns"] as $i => $column) {
+						$name = $this->getRelationalColumnName($column);
+						$raw .= '"$name","$separator"';
+						if ($length > $i + 1) $raw .= ",";
+					}
+					$columns[] = $this->query->raw($value["function"] . "($raw) as ".self::OBSERVER_PREFIX.$alias);
+				default:
 			}
 		}
 		return $columns;
