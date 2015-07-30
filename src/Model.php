@@ -93,8 +93,32 @@ abstract class Model extends Eloquent {
 
 		$query = $this->newQuery()->with($relations);
 
-		$query->load($this);
+		$query->load(array($this));
 		
 		return $this;
 	}
+	
+	public function push()
+	{
+		if ( ! $this->save()) return false;
+
+		// To sync all of the relationships to the database, we will simply spin through
+		// the relationships and save each model via this "push" method, which allows
+		// us to recurse into all of these nested relations for the model instance.
+		foreach ($this->relations as $models)
+		{
+			foreach (Collection::make($models) as $model)
+			{
+				if ( ! $model->push()) return false;
+			}
+		}
+
+		return true;
+	}
+	
+	public function newCollection(array $models = array())
+	{
+		return new Collection($models);
+	}
+
 }

@@ -101,9 +101,9 @@ class Builder extends EloquentBuilder {
 		return $this->model->newCollection($models);
 	}
 	
-	public function load($model)
+	public function load($models)
 	{
-		$this->where($model->getKeyName(), $model->getKey());
+		$this->where($models[0]->getKeyName(), $models[0]->getKey());
 		
 		$this->prepareQuery();
 			
@@ -119,8 +119,11 @@ class Builder extends EloquentBuilder {
 		);
 		
 		$results = $this->query->get();
+		foreach($results as $i => $result) {
+			$this->buildModel($models[$i], $this->relations, $result);
+		}
 		
-		$this->buildModel($model, $this->relations, $results[0]);
+		return $models;
 	}
 	
 	public function update(array $values)
