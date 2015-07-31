@@ -111,7 +111,7 @@ class Builder extends EloquentBuilder {
 		if (count($models) > 1)
 			$this->whereIn($models[0]->getKeyName(), array_map(function($model){
 					return $model->getKey();
-				}));
+				}, $models));
 		else 
 			$this->where($models[0]->getKeyName(), $models[0]->getKey());
 		
