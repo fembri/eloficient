@@ -2,7 +2,7 @@
 
 use Illuminate\Database\Eloquent\Collection as BaseCollection;
 
-class Collection extends Illuminate\Database\Eloquent\Collection 
+class Collection extends \Illuminate\Database\Eloquent\Collection 
 {
 	/**
 	 * Load a set of relationships onto the collection.

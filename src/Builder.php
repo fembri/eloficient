@@ -39,7 +39,7 @@ class Builder extends EloquentBuilder {
 		return $this;
 	}
 	
-	public function paginate($perPage = null, $columns = array("*"))
+	public function paginate($perPage = null, $columns = array("*"), $itemProcessor = null)
 	{
 		if ($this->disableEloficient) return parent::paginate($perPage, $columns = array("*"));
 		
@@ -51,7 +51,12 @@ class Builder extends EloquentBuilder {
 		
 		$this->query->forPage($paginator->getCurrentPage(), $perPage);
 		
-		return $paginator->make($this->get($columns)->all(), $this->getPaginationTotalRows(), $perPage);
+		$collection = $this->get($columns);
+		$totalRows = $this->getPaginationTotalRows();
+		
+		if ($itemProcessor instanceof Closure) $collection = call_user_func($itemProcessor, $collection);
+		
+		return $paginator->make($collection->all(), $totalRows, $perPage);
 	}
 	
 	public function getPaginationTotalRows()
@@ -439,33 +444,43 @@ class Builder extends EloquentBuilder {
 	public function buildModel(&$parent, $relations, $result, $parentKey = "")
 	{
 		foreach($relations as $relation) {
-			$fieldSets = array_filter(
-				explode(static::GROUP_SEPARATOR, $result->{ $relation["prefix"].$relation["id"]. "_fields" }), 
-				function($value) use ($parentKey) {
-					return !$parentKey || strpos($value, $parentKey) === 0;
+			$parentRelations = $parent->getRelations();
+			if (isset($parentRelations[$relation["name"]]) && $collection = $parentRelations[$relation["name"]]) {
+				if ($collection instanceof Model)
+					$this->buildModel($collection, $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $collection->getKey() : $collection->getKey());
+				else 
+					$collection = $collection->map(function($collection) use ($relation, $result, $parentKey) {
+						$this->buildModel($collection, $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $collection->getKey() : $collection->getKey());
+						return $collection;
+					});
+			} else {
+				$fieldSets = array_filter(
+					explode(static::GROUP_SEPARATOR, $result->{ $relation["prefix"].$relation["id"]. "_fields" }), 
+					function($value) use ($parentKey) {
+						return !$parentKey || strpos($value, $parentKey) === 0;
+					}
+				);
+				
+				$models = array();
+				foreach(array_values($fieldSets) as $i => $fieldSet) {
+					if ($model = $this->createModelInstanceFromResult($relation, $fieldSet, $parentKey)) {
+						$models[$i] = $model;
+						$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $models[$i]->getKey() : $models[$i]->getKey());
+					}
 				}
-			);
-			
-			$models = array();
-			foreach(array_values($fieldSets) as $i => $fieldSet) {
-				if ($model = $this->createModelInstanceFromResult($relation, $fieldSet, $parentKey)) {
-					$models[$i] = $model;
-					$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $models[$i]->getKey() : $models[$i]->getKey());
-				}
+				if ($models) {
+					switch(get_class($relation["relation"])) {
+						case "Illuminate\Database\Eloquent\Relations\HasOne":
+						case "Illuminate\Database\Eloquent\Relations\BelongsTo":
+							$collection = array_shift($models);
+							break;
+						case "Illuminate\Database\Eloquent\Relations\HasMany":
+						default:
+							$collection = $relation["model"]->newCollection($models);
+							break;
+					}
+				} else unset($collection);
 			}
-			
-			if ($models) {
-				switch(get_class($relation["relation"])) {
-					case "Illuminate\Database\Eloquent\Relations\HasOne":
-					case "Illuminate\Database\Eloquent\Relations\BelongsTo":
-						$collection = array_shift($models);
-						break;
-					case "Illuminate\Database\Eloquent\Relations\HasMany":
-					default:
-						$collection = $relation["model"]->newCollection($models);
-						break;
-				}
-			} else unset($collection);
 			
 			$parent->setRelation($relation["name"], $collection);
 		}
