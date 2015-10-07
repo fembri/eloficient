@@ -244,15 +244,10 @@ class Builder extends EloquentBuilder {
 				
 				foreach($relation["relation"]->getQuery()->getQuery()->wheres as $where) {
 					
-					if (!in_array($where["type"], $this->supportedJoinCondition)) continue;
+					$where["column"] = $this->getRelationalColumnName($where["column"]);
+					$where["value"] = $where["value"] instanceof FieldName ? $this->getRelationalColumnName($where["value"]->getName()) : $where["value"];
 					
-					$join->on(
-						$this->getRelationalColumnName($where["column"]),
-						$where["operator"],
-						is_string($where["value"]) ? $this->getRelationalColumnName($where["column"]) : $where["value"],
-						$where["boolean"],
-						!is_string($where["value"])
-					);
+					$join->addClause($where);
 				}
 			};
 		
@@ -527,6 +522,14 @@ class Builder extends EloquentBuilder {
 				case "SUM":
 					$name = $this->getRelationalColumnName($value["columns"][0]);
 					$columns[] = $this->query->raw($value["function"] . "($name) as ".self::OBSERVER_PREFIX.$alias);
+					break;
+				case "COUNT":
+					$name = $this->getRelationalColumnName($value["columns"][0]);
+					$columns[] = $this->query->raw($value["function"] . "($name) as ".self::OBSERVER_PREFIX.$alias);
+					break;
+				case "FIELD":
+					$name = $this->getRelationalColumnName($value["columns"][0]);
+					$columns[] = $this->query->raw("$name as ".self::OBSERVER_PREFIX.$alias);
 					break;
 				case "CONCAT":
 					extract($value["extras"]);

@@ -19,6 +19,7 @@ class EloficientServiceProvider extends ServiceProvider {
 			$this->app['events'], 
 			$this->app['eloficient']->getFieldCache()
 		);
+		$this->app['db']->setQueryGrammar(new MysqlGrammar);
 		$this->app['db']->statement('SET SESSION group_concat_max_len = 16384');
 	}
 

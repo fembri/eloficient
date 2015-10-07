@@ -57,6 +57,11 @@ abstract class Model extends Eloquent {
 	{
 		return static::$fieldCache = $fieldCache;
 	}
+	
+	public static function field($name)
+	{
+		return new FieldName($name);
+	}
 
 	/**
 	 * Set current fields on the model.
