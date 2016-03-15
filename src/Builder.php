@@ -245,7 +245,7 @@ class Builder extends EloquentBuilder {
 				foreach($relation["relation"]->getQuery()->getQuery()->wheres as $where) {
 					
 					$where["column"] = $this->getRelationalColumnName($where["column"]);
-					$where["value"] = $where["value"] instanceof FieldName ? $this->getRelationalColumnName($where["value"]->getName()) : $where["value"];
+					$where["value"] = $where["value"] instanceof FieldName ? $this->query->raw($this->getRelationalColumnName($where["value"]->getName())) : $where["value"];
 					
 					$join->addClause($where);
 				}
