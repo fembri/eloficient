@@ -1,17 +1,20 @@
 <?php namespace Fembri\Eloficient;
 
 use DateTime;
+use Exception;
 use ArrayAccess;
 use Carbon\Carbon;
 use LogicException;
 use JsonSerializable;
-use Illuminate\Events\Dispatcher;
+use Illuminate\Contracts\Support\Jsonable;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Contracts\Routing\UrlRoutable;
+use Illuminate\Contracts\Queue\QueueableEntity;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Support\Contracts\JsonableInterface;
-use Illuminate\Support\Contracts\ArrayableInterface;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -33,6 +36,11 @@ abstract class Model extends Eloquent {
 	 */
 	protected $fields = array();
 	
+	/**
+	 * The model's fields cache.
+	 *
+	 * @var array
+	 */
 	protected static $fieldCache;
 
 	/**
@@ -43,16 +51,28 @@ abstract class Model extends Eloquent {
 	public function getFields()
 	{
 		if (!$this->fields) {
+
 			$this->fields = $this->getFieldCache()->get(get_called_class());
 		}
+
 		return $this->fields;
-	}
-	
+	}	
+
+	/**
+	 * Get all of the field cache manager.
+	 *
+	 * @return array
+	 */
 	public function getFieldCache()
 	{
 		return static::$fieldCache;
 	}
 	
+	/**
+	 * Set the field cache manager.
+	 *
+	 * @return array
+	 */
 	public static function setFieldCache($fieldCache)
 	{
 		return static::$fieldCache = $fieldCache;
