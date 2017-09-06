@@ -1,109 +1,89 @@
-<?php namespace Fembri\Eloficient;
+<?php
 
-use Closure;
-use Illuminate\Support\Collection;
-use Illuminate\Database\ConnectionInterface;
-use Illuminate\Database\Query\Grammars\Grammar;
-use Illuminate\Database\Query\Processors\Processor;
-use Illuminate\Database\Query\Expression;
+namespace Fembri\Eloficient;
 
-class QueryBuilder extends \Illuminate\Database\Query\Builder 
+use Illuminate\Database\Query\Builder;
+
+class QueryBuilder extends Builder 
 {
 	/**
-	 * Add a raw where clause to the query.
-	 *
-	 * @param  string  $sql
-	 * @param  array   $bindings
-	 * @param  string  $boolean
-	 * @return $this
-	 */
-	public function whereRaw($sql, array $bindings = array(), $boolean = 'and')
+     * Add a join clause to the query.
+     *
+     * @param  string  $table
+     * @param  string  $first
+     * @param  string  $operator
+     * @param  string  $second
+     * @param  string  $type
+     * @param  bool    $where
+     * @return $this
+     */
+    public function join($table, $first, $operator = null, $second = null, $type = 'inner', $where = false)
+    {
+        $join = new JoinClause($this, $type, $table);
+
+        // If the first "column" of the join is really a Closure instance the developer
+        // is trying to build a join with a complex "on" clause containing more than
+        // one condition, so we'll add the join and call a Closure with the query.
+        if ($first instanceof Closure) {
+            call_user_func($first, $join);
+
+            $this->joins[] = $join;
+
+            $this->addBinding($join->getBindings(), 'join');
+        }
+
+        // If the column is simply a string, we can assume the join simply has a basic
+        // "on" clause with a single condition. So we will just build the join with
+        // this simple join clauses attached to it. There is not a join callback.
+        else {
+            $method = $where ? 'where' : 'on';
+
+            $this->joins[] = $join->$method($first, $operator, $second);
+
+            $this->addBinding($join->getBindings(), 'join');
+        }
+
+        return $this;
+    }
+    	
+	public function addWhere($where) 
 	{
-		$type = 'raw';
+		if ($where['type'] == 'Basic') 
+			$this->where($where['column'], $where['operator'], $where['value'], $where['boolean']);
 
-		$this->wheres[] = compact('type', 'sql', 'boolean', 'bindings');
+		if ($where['type'] == 'Column')
+			$this->whereColumn($where['first'], $where['operator'], $where['second'], $where['boolean']);
 
-		$this->addBinding($bindings, 'where');
+		if ($where['type'] == 'In' || $where['type'] == 'NotIn')
+			$this->whereIn($where['column'], $where['values'], $where['boolean'], $where['type'] == 'NotIn');
 
-		return $this;
-	}
-	
-	/**
-	 * Add a where between statement to the query.
-	 *
-	 * @param  string  $column
-	 * @param  array   $values
-	 * @param  string  $boolean
-	 * @param  bool  $not
-	 * @return $this
-	 */
-	public function whereBetween($column, array $values, $boolean = 'and', $not = false)
-	{
-		$type = 'between';
+		if ($where['type'] == 'InSub' || $where['type'] == 'NotInSub') {
 
-		$this->wheres[] = compact('column', 'type', 'boolean', 'not', 'values');
+			$callback = function($query) use ($where) {
 
-		$this->addBinding($values, 'where');
+				$query = $where['query'];
+			};
 
-		return $this;
-	}
-	
-	/**
-	 * Add a "having" clause to the query.
-	 *
-	 * @param  string  $column
-	 * @param  string  $operator
-	 * @param  string  $value
-	 * @param  string  $boolean
-	 * @return $this
-	 */
-	public function having($column, $operator = null, $value = null, $boolean = 'and')
-	{
-		$type = 'basic';
-
-		$this->havings[] = compact('type', 'column', 'operator', 'value', 'boolean');
-		
-		if ( ! $value instanceof Expression)
-		{
-			$this->addBinding($value, 'having');
+			$this->whereInSub($where['column'], $callback, $where['boolean'], $where['type'] == 'NotInSub');
 		}
 
-		return $this;
-	}
-	
-	/**
-	 * Add a join clause to the query.
-	 *
-	 * @param  string  $table
-	 * @param  string  $one
-	 * @param  string  $operator
-	 * @param  string  $two
-	 * @param  string  $type
-	 * @param  bool    $where
-	 * @return $this
-	 */
-	public function join($table, $one, $operator = null, $two = null, $type = 'inner', $where = false)
-	{
-		// If the first "column" of the join is really a Closure instance the developer
-		// is trying to build a join with a complex "on" clause containing more than
-		// one condition, so we'll add the join and call a Closure with the query.
-		if ($one instanceof Closure)
-		{
-			$this->joins[] = new JoinClause($type, $table);
+		if ($where['type'] == 'Null' || $where['type'] == 'NotNull')
+			$this->whereNull($where['column'], $where['boolean'], $where['type'] == 'NotNull');
 
-			call_user_func($one, end($this->joins));
-		}
+		if (in_array($where['type'], ['Year', 'Month', 'Day', 'Time', 'Date']))
+			$this->addDateBasedWhere($where['type'], $where['column'], $where['operator'], $where['value'], $where['boolean']);
 
-		// If the column is simply a string, we can assume the join simply has a basic
-		// "on" clause with a single condition. So we will just build the join with
-		// this simple join clauses attached to it. There is not a join callback.
-		else
-		{
-			$join = new JoinClause($type, $table);
+		if ($where['type'] == 'Nested')
+			$this->whereNull($where['query'], $where['boolean']);
 
-			$this->joins[] = $join->on(
-				$one, $operator, $two, 'and', $where
-			);
+		if ($where['type'] == 'Sub') {
+
+			$callback = function($query) use ($where) {
+
+				$query = $where['query'];
+			};
+
+			$this->whereSub($where['column'], $where['operator'], $callback, $where['boolean']);
 		}
 
 		return $this;

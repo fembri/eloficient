@@ -4,6 +4,8 @@ use Closure;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Pagination\Paginator;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class Builder extends EloquentBuilder {
 	
@@ -23,9 +25,11 @@ class Builder extends EloquentBuilder {
 		'havings',
 		'orders',
 	);
+	protected $queryComponentsFormatted = false;
 	protected $observer = array();
 	protected $search;
 	protected $prepareForPagination;
+	protected $eagerLoadPrepared = false;
 	
 	public function unEloficient()
 	{
@@ -39,24 +43,27 @@ class Builder extends EloquentBuilder {
 		return $this;
 	}
 	
-	public function paginate($perPage = null, $columns = array("*"), $itemProcessor = null)
+	public function paginate($perPage = null, $columns = array("*"), $pageName = 'page', $page = null, $itemProcessor = null)
 	{
-		if ($this->disableEloficient) return parent::paginate($perPage, $columns = array("*"));
+		if ($this->disableEloficient) return parent::paginate($perPage, $columns = array("*"), $pageName, $page);
 		
-		$perPage = $perPage ?: ($_GET["perpage"] ?: $this->model->getPerPage());
+        	$page = $page ?: Paginator::resolveCurrentPage($pageName);
 
-		$paginator = $this->query->getConnection()->getPaginator();
+		$perPage = $perPage ?: $this->model->getPerPage();
 		
 		$this->prepareForPagination = true;
 		
-		$this->query->forPage($paginator->getCurrentPage(), $perPage);
+		$this->query->forPage($page, $perPage);
 		
 		$collection = $this->get($columns);
 		$totalRows = $this->getPaginationTotalRows();
 		
 		if ($itemProcessor instanceof Closure) $collection = call_user_func($itemProcessor, $collection);
 		
-		return $paginator->make($collection->all(), $totalRows, $perPage);
+		return new LengthAwarePaginator($collection, $totalRows, $perPage, $page, [
+	            'path' => Paginator::resolveCurrentPath(),
+	            'pageName' => $pageName,
+	        ]);
 	}
 	
 	public function getPaginationTotalRows()
@@ -77,21 +84,26 @@ class Builder extends EloquentBuilder {
 		if ($this->disableEloficient) return parent::get($columns);
 		
 		if ($this->eagerLoad) {
+
+			if (!$this->eagerLoadPrepared) {
 			
-			$this->prepareQuery();
-			
-			$this->buildRelationshipTree();
-			
-			$this->applyRelationshipQuery($this->relations);
-			
-			$this->reformatQueryComponents();
-			
-			$this->query->columns = array_merge(
-				$this->getColumns($this->relations),
-				$this->getObserverColumns()
-			);
-			
-			$this->applySearch();
+				$this->prepareQuery();
+				
+				$this->buildRelationshipTree();
+				
+				$this->applyRelationshipQuery($this->relations);
+				
+				$this->reformatQueryComponents();
+				
+				$this->query->columns = array_merge(
+					$this->getColumns($this->relations),
+					$this->getObserverColumns()
+				);
+				
+				$this->applySearch();
+			}
+
+			$this->eagerLoadPrepared = true;
 			
 			$models = $this->buildModelsFromRelationshipTree(
 				$this->relations, 
@@ -219,36 +231,44 @@ class Builder extends EloquentBuilder {
 	public function applyRelationshipQuery($relations, $parent = null)
 	{
 		if (!$parent) {
+
 			$parent = array("id" => $this->model->getTable(), "prefix" => "");
+			
 			$this->query->groupBy($this->model->getKeyName());
 		}
 		
 		foreach($relations as $i => $relation) {
 			
 			$joinCondition = function($join) use ($parent, $relation)  {
+
+				$join->on(function($query) use ($parent, $relation) {
 				
-				if ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\HasOneOrMany) {
-					$firstKey = explode( ".", $relation["relation"]->getQualifiedParentKeyName() );
-					$firstKey = array_pop( $firstKey );
-					$secondKey = $relation["relation"]->getPlainForeignKey();
-				} elseif ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
-					$firstKey = $relation["relation"]->getForeignKey();
-					$secondKey = $relation["relation"]->getOtherKey();
-				}
-				
-				$join->on(
-					$parent["prefix"] . $parent["id"] . "." . $firstKey, 
-					"=", 
-					$relation["prefix"] . $relation["id"] . "." . $secondKey
-				);
-				
-				foreach($relation["relation"]->getQuery()->getQuery()->wheres as $where) {
-					
-					$where["column"] = $this->getRelationalColumnName($where["column"]);
-					$where["value"] = $where["value"] instanceof FieldName ? $this->query->raw($this->getRelationalColumnName($where["value"]->getName())) : $where["value"];
-					
-					$join->addClause($where);
-				}
+					if ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\HasOneOrMany) {
+
+						$firstKey = explode(".", $relation["relation"]->getQualifiedParentKeyName() );
+						$firstKey = array_pop($firstKey);
+						$secondKey = $relation["relation"]->getForeignKeyName();
+
+					} elseif ($relation["relation"] instanceof \Illuminate\Database\Eloquent\Relations\BelongsTo) {
+						
+						$firstKey = $relation["relation"]->getForeignKey();
+						$secondKey = $relation["relation"]->getOwnerKey();
+					}
+
+					$query->whereColumn(
+						$parent["prefix"] . $parent["id"] . "." . $firstKey,  
+						$relation["prefix"] . $relation["id"] . "." . $secondKey
+					);
+
+					foreach($relation["relation"]->getQuery()->getQuery()->wheres as $where) {
+
+						if (isset($where['column'])) $where['column'] = $this->getRelationalColumnName($where["column"]);
+						if (isset($where['first'])) $where['first'] = $this->getRelationalColumnName($where["first"]);
+						if (isset($where['second'])) $where['second'] = $this->getRelationalColumnName($where["second"]);
+
+						$query->addWhere($where);
+					}
+				});
 			};
 		
 			$this->query->leftJoin(
@@ -263,6 +283,7 @@ class Builder extends EloquentBuilder {
 	public function getRelationalColumnName($column)
 	{
 		if (strpos($column, ".") === false) {
+
 			if (in_array($column, $this->model->getFields()))
 				return $this->model->getTable() . "." . $column;
 			else 
@@ -334,10 +355,15 @@ class Builder extends EloquentBuilder {
 	public function reformatQueryComponents(&$query = null)
 	{
 		if (!$query) $query = $this->query;
+
 		foreach($this->queryComponents as $component) {
+
 			if (!$query->{$component}) continue;
 			
 			foreach($query->{$component} as $i => $item) {
+
+				if(!isset($item["type"])) $item["type"] = 'Basic';
+				
 				call_user_func_array(array($this, "reformat". $item["type"] ."Query"), array(&$query->{$component}[$i], $component));
 			}
 		}
@@ -353,7 +379,7 @@ class Builder extends EloquentBuilder {
 			}
 		}
 		
-		if ($data["value"]) {
+		if (isset($data["value"]) && $data["value"]) {
 			if ($data["value"] instanceof Expression) {
 				$data["type"] = "raw";
 				$data["sql"] = $this->query->raw(
@@ -444,8 +470,13 @@ class Builder extends EloquentBuilder {
 	public function buildModel(&$parent, $relations, $result, $parentKey = "")
 	{
 		foreach($relations as $relation) {
+
+			// If the relation with the same name already loaded, update it, otherwise create one
+
 			$parentRelations = $parent->getRelations();
+
 			if (isset($parentRelations[$relation["name"]]) && $collection = $parentRelations[$relation["name"]]) {
+
 				if ($collection instanceof Model)
 					$this->buildModel($collection, $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $collection->getKey() : $collection->getKey());
 				else 
@@ -453,22 +484,29 @@ class Builder extends EloquentBuilder {
 						$this->buildModel($collection, $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $collection->getKey() : $collection->getKey());
 						return $collection;
 					});
+
 			} else {
+				
 				$fieldSets = array_filter(
 					explode(static::GROUP_SEPARATOR, $result->{ $relation["prefix"].$relation["id"]. "_fields" }), 
 					function($value) use ($parentKey) {
-						return !$parentKey || strpos($value, $parentKey) === 0;
+						return !$parentKey || strpos($value, "$parentKey") === 0;
 					}
 				);
 				
 				$models = array();
+
 				foreach(array_values($fieldSets) as $i => $fieldSet) {
+					
 					if ($model = $this->createModelInstanceFromResult($relation, $fieldSet, $parentKey)) {
+
 						$models[$i] = $model;
 						$this->buildModel($models[$i], $relation["childs"], $result, $parentKey ? $parentKey . static::FIELD_SEPARATOR . $models[$i]->getKey() : $models[$i]->getKey());
 					}
 				}
+
 				if ($models) {
+
 					switch(get_class($relation["relation"])) {
 						case "Illuminate\Database\Eloquent\Relations\HasOne":
 						case "Illuminate\Database\Eloquent\Relations\BelongsTo":
@@ -479,7 +517,7 @@ class Builder extends EloquentBuilder {
 							$collection = $relation["model"]->newCollection($models);
 							break;
 					}
-				} else unset($collection);
+				} else $collection = null;
 			}
 			
 			$parent->setRelation($relation["name"], $collection);

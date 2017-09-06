@@ -1,13 +1,9 @@
-<?php namespace Fembri\Eloficient;
+<?php
 
-use Illuminate\Database\Query\Expression;
-use Illuminate\Database\Query\JoinClause as BaseJoinClause;
-// use Traits\CanModifyArbitraryQueryComponent;
+namespace Fembri\Eloficient\Traits;
 
-class JoinClause extends BaseJoinClause {
-    	
-	// use CanModifyArbitraryQueryComponent;
-
+trait CanModifyArbitraryQueryComponent {
+	
 	public function addWhere($where) 
 	{
 		if ($where['type'] == 'Basic') 

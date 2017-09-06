@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-//use Illuminate\Database\Query\Builder as QueryBuilder;
+// use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
@@ -76,11 +76,6 @@ abstract class Model extends Eloquent {
 	public static function setFieldCache($fieldCache)
 	{
 		return static::$fieldCache = $fieldCache;
-	}
-	
-	public static function field($name)
-	{
-		return new FieldName($name);
 	}
 
 	/**

@@ -12,14 +12,16 @@ class EloficientServiceProvider extends ServiceProvider {
 	 */
 	public function boot()
 	{
-		$this->package('fembri/eloficient', 'eloficient', __DIR__);
+		$this->publishes([
+			__DIR__.'/config/config.php' => config_path('eloficient.php')
+		]);
 		
 		$this->app['eloficient']->bootEloficient(
 			$this->app['db'], 
 			$this->app['events'], 
 			$this->app['eloficient']->getFieldCache()
 		);
-		$this->app['db']->setQueryGrammar(new MysqlGrammar);
+
 		$this->app['db']->statement('SET SESSION group_concat_max_len = 16384');
 	}
 
@@ -30,11 +32,16 @@ class EloficientServiceProvider extends ServiceProvider {
 	 */
 	public function register()
 	{
-		$this->app->bindShared('eloficient', function($app)
+		$this->mergeConfigFrom(__DIR__.'/config/config.php', 'eloficient');
+
+		$this->app->singleton('eloficient', function($app)
 		{
 			return new EloficientManager(
 				$app,
-				new FieldCache($app["config"]->get("eloficient::modelPaths"), $app["config"]->get("eloficient::modelFieldCachePath"))
+				new FieldCache(
+					$app["config"]->get("eloficient.modelPaths", app_path()), 
+					$app["config"]->get("eloficient.modelFieldCachePath", storage_path('eloficient'))
+				)
 			);
 		});
 		
@@ -43,7 +50,7 @@ class EloficientServiceProvider extends ServiceProvider {
 	
 	public function registerCommands()
 	{
-		$this->app->bindShared('eloficient.cachefield', function($app)
+		$this->app->singleton('eloficient.cachefield', function($app)
 		{
 			return new CacheFieldCommand($app);
 		});

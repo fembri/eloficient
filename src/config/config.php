@@ -2,7 +2,7 @@
 
 return array(
 	"modelPaths" => array(
-		__DIR__ . "/../models"
+		app_path()
 	),
-	"modelFieldCachePath" => __DIR__ . "/../temporary"
+	"modelFieldCachePath" => storage_path('eloficient')
 );
